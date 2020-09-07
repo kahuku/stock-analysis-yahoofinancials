@@ -3,15 +3,13 @@
 #https://github.com/JECSand/yahoofinancials
 
 
-#dividend statistics.
-#formatting
-#clean up commented code and spacing
+#FCF
 
 from datetime import datetime
-import pandas as pd
+from bs4 import BeautifulSoup
+import requests
 from yahoofinancials import YahooFinancials
-import yfinance as yf
-import matplotlib
+
 
 today = datetime.date(datetime.now())#saves today's date in correct form
 errorLog = []
@@ -21,9 +19,14 @@ def dataGet(tickerS):
     
     yahoo_financials = YahooFinancials(tickerS)#uses ticker to gather data
 
+    gEstimate = input("Estimate 7-10 yr earnings growth %: ")
+    print('\n')
     try:
         print(yahoo_financials.get_stock_quote_type_data()[tickerS]['shortName'])
         #shortName, longName, market
+    except TypeError:
+        print("Invalid input. Please enter a public ticker symbol.")
+        return
     except Exception as e:
         None
         
@@ -52,13 +55,21 @@ def dataGet(tickerS):
         price = yahoo_financials.get_current_price()
         price_f = "${:,.2f}".format(price)
         print(("Price: ").ljust(ljust1),price_f)
-    except TypeError:
-        print("Invalid input. Please enter a public ticker symbol.")
-        return
     except Exception as e:
         errorLog.append(e)
         print(("Price: ").ljust(ljust1),"error loading")
+
+
+    #MC
+    try:
+        marketCap = (yahoo_financials.get_summary_data()[tickerS]['marketCap'])
+        print(("Market Cap: ").ljust(ljust1),"{:,}".format(marketCap))
+    except Exception as e:
+        errorLog.append(e)
+        print(("Market Cap: ").ljust(ljust1),"error loading")
+    
     print()
+    
     #beta
     try:
         beta = round(yahoo_financials.get_beta(),3)
@@ -91,6 +102,40 @@ def dataGet(tickerS):
         errorLog.append(e)
         print(("P/E: ").ljust(ljust2), "error loading")
 
+    #PEG
+    try:
+        gSite = 'http://finance.yahoo.com/quote/' + tickerS + '/key-statistics?p=' + tickerS
+        gSource = requests.get(gSite).text
+        gSoup = BeautifulSoup(gSource, 'lxml')
+        
+        gTable = gSoup.find('table')
+        #print(gTable)
+        #print('\n')
+        gLog = []
+        for gTag in gTable.find_all('tr'):
+            #print(gTag)
+            gLog.append(gTag)
+
+        gRow = gLog[5]
+        #print(gRow)
+        pegLog = []
+        for gThing in gRow.find_all('td'):
+            #print(gThing.text)
+            pegLog.append(gThing.text)
+
+        print(("PEG: ").ljust(ljust2),pegLog[1])
+    except Exception as e:
+        errorLog.append(e)
+        print(("PEG: ").ljust(ljust2),"error loading")
+        
+    #earnings yield
+    try:
+        ey = 1/pe
+        print(("Earnings yield: ").ljust(ljust2),"{:.2%}".format(ey)) 
+    except Exception as e:
+        errorLog.append(e)
+        print(("Earnigns Yield: ").ljust(ljust2),"error loading")
+
     #forwardEPS
     try:
         forwardEps = yahoo_financials.get_key_statistics_data()[tickerS]['forwardEps']
@@ -110,7 +155,9 @@ def dataGet(tickerS):
     #earnings quarterly growth
     try:
         eqg = yahoo_financials.get_key_statistics_data()[tickerS]['earningsQuarterlyGrowth']
-        print(("Earnings Quarterly Growth: ").ljust(ljust2),"{:.0%}".format(eqg))
+        print(("Earnings Quarterly Growth: ").ljust(ljust2),"{:.2%}".format(eqg))
+    except TypeError:
+        None
     except Exception as e:
         errorLog.append(e)
         print(("Earnings Quarterly Growth: ").ljust(ljust2),"error loading")
@@ -137,6 +184,28 @@ def dataGet(tickerS):
         except Exception as e:
             errorLog.append(e)
             print(("PTB: ").ljust(ljust2),"error loading")
+
+    #fair value
+    try:
+        if gEstimate != '':
+            fairValue1 = (eps*(7+int(gEstimate))*4.4)/3
+            fairValue2 = (eps*(8.5+int(gEstimate))*4.4)/2.44
+            print(("Fair value low: ").ljust(ljust2),"${:,.2f}".format(fairValue1))
+            print(("Fair value high: ").ljust(ljust2),"${:,.2f}".format(fairValue2))
+        else:
+            g = pegLog[1]
+            g = float(g)
+            g = 1/g
+            g *= pe
+            fairValue1 = (eps*(7+g)*4.4)/3
+            fairValue2 = (eps*(8.5+g)*4.4)/2.44
+            print(("Fair value low: ").ljust(ljust2),"${:,.2f}".format(fairValue1))
+            print(("Fair value high: ").ljust(ljust2),"${:,.2f}".format(fairValue2))
+
+    except Exception as e:
+        errorLog.append(e)
+        print(("Fair value: ").ljust(ljust2),"error loading")
+    
     #AL     
     try:
         #Balance sheet data. Freq can be annual or quarterly. Statement type = income, balance, cash. Reformat defaults true 
@@ -163,6 +232,98 @@ def dataGet(tickerS):
         errorLog.append(e)
         print(("Profit margin: ").ljust(ljust2),"error loading")
 
+
+    #ROE
+    try:
+        site = 'http://finance.yahoo.com/quote/' + tickerS + '/key-statistics?p=' + tickerS
+        source = requests.get(site).text
+        soup = BeautifulSoup(source, 'lxml')
+        tables = soup.find('div',class_="Mb(10px) Pend(20px) smartphone_Pend(0px)")
+        taglog = []
+        #print(tables)
+        for tag in tables.find_all('td'):
+            #print(tag.text)
+            taglog.append(tag.text)
+        print(("ROE: ").ljust(ljust2),taglog[11])
+
+    except Exception as e:
+        errorLog.append(e)
+        print(("ROE: ").ljust(ljust2), "error loading")
+
+    #FCF
+    try:
+        fSite = 'http://finance.yahoo.com/quote/' + tickerS + '/cash-flow/'
+        fSource = requests.get(fSite).text
+        fSoup = BeautifulSoup(fSource, 'lxml')
+
+        """
+        fLog1 = []
+        fLog2 = []
+        for fTag in fSoup.find_all('div',class_="Ta(c) Py(6px) Bxz(bb) BdB Bdc($seperatorColor) Miw(120px) Miw(140px)--pnclg Bgc($lv1BgColor) fi-row:h_Bgc($hoverBgColor) D(tbc)"):
+            #print(fTag.text)
+            fLog1.append(fTag.text)
+        for fTag2 in fSoup.find_all('div',class_="Ta(c) Py(6px) Bxz(bb) BdB Bdc($seperatorColor) Miw(120px) Miw(140px)--pnclg D(tbc)"):
+            #print(fTag2.text)
+            fLog2.append(fTag2.text)
+    
+        #print(fLog1[33])
+        #print(fLog2[22])
+        #print(fLog1[34])
+        #print(fLog2[23])
+        #print(fLog1[35])
+        
+        print(("FCF: ").ljust(ljust2),fLog1[33])
+        """
+        fSoup = fSoup.find('div',class_="D(tbrg)")
+        #print(fSoup)
+        fSoupCut = []
+        fcfList = []
+        for item in fSoup.find_all('div', attrs={"data-test":"fin-row"}):
+            fSoupCut.append(item)
+        fSoupCut = fSoupCut[::-1]
+        fSoupCut = fSoupCut[0]
+        for row in fSoupCut.find_all('div', attrs={"data-test":"fin-col"}):
+            #print(row.text)
+            fcfList.append(row.text)
+
+
+
+        print(("FCF: ").ljust(ljust2), fcfList[0])
+        i = 0
+        for i in range(0,len(fcfList)):
+            fcfList[i] = fcfList[i].replace(',','') 
+            fcfList[i] = int(fcfList[i])
+            i += 1
+    except Exception as e:
+        errorLog.append(e)
+        print(("FCF: ").ljust(ljust2),"error loading")
+
+    try:
+        fcfG = (fcfList[0] - fcfList[1])/fcfList[1]
+        if fcfG == 0:
+            fcfG = (fcfList[1] - fcfList[2])/fcfList[2]
+        print(("FCF growth: ").ljust(ljust2),"{:.0%}".format(fcfG))
+    except Exception as e:
+        errorLog.append(e)
+        print(("FCF growth: ").ljust(ljust2),"error loading")
+
+    try:
+        fcf5 = 0
+        j = 0
+        if len(fcfList) < 5:
+            for value in fcfList:
+                fcf5 += value
+            fcf5 /= len(fcfList)
+        
+        else:
+            for j in range(0,5):
+                fcf5 += fcfList[j]
+            fcf5 /= 5
+        print(("5 yr avg FCF: ").ljust(ljust2),"{:,}".format(fcf5))
+    except Exception as e:
+        errorLog.append(e)
+        print(("5 yr avg FCF: ").ljust(ljust2),"error loading")
+
     print()
     """
     try:
@@ -172,7 +333,9 @@ def dataGet(tickerS):
         errorLog.append(e)
         print(("Revenue Quarterly Growth: ").ljust(ljust),"error loading")
     """
-    
+
+
+
     #print(yahoo_financials.get_financial_stmts('quarterly', 'income')['incomeStatementHistoryQuarterly'][tickerS])
     ##netIncome, grossProfit, operatingIncome, totalRevenue, totalOperatingExpenses, costOfRevenue, netIncomeApplicableToCommonShares
     ##quarterly displays all this information for each of the past four quarers in a dictionary with it's quarter's date on it
@@ -247,12 +410,11 @@ if __name__ == "__main__":
     symbol = input("Enter the symbol to check: ")
     flag = False
     while flag == False:
-        print('\n')
         dataGet(symbol)
         print('\n')
-        #if errorLog != []:
-         #   print(errorLog)
-          #  print()
+        if errorLog != []:
+           print(errorLog)
+           print()
         errorLog = []
         print("\n")
         symbol = input("Enter another symbol or done to quit: ")
